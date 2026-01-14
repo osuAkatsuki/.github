@@ -1,6 +1,6 @@
 # Akatsuki
 
-Akatsuki is a microservices-based [osu!](https://osu.ppy.sh) private server. This monorepo contains ten services that communicate via shared MySQL database, Redis pub/sub, and RabbitMQ message queues.
+Akatsuki is a microservices-based [osu!](https://osu.ppy.sh) private server. This monorepo contains nineteen services that communicate via shared MySQL database, Redis pub/sub, and RabbitMQ message queues.
 
 **Website:** [akatsuki.gg](https://akatsuki.gg)
 
@@ -11,6 +11,7 @@ flowchart TB
     subgraph External["External Clients"]
         osu(["osu! Game Client"])
         web(["Web Browser"])
+        discordclient(["Discord"])
     end
 
     subgraph Nginx["nginx-conf (Reverse Proxy)"]
@@ -20,6 +21,7 @@ flowchart TB
     subgraph Public["Public-Facing Services"]
         bancho["bancho-service-rs<br/>(Rust/Axum) :5001"]
         hanayo["hanayo<br/>(Go/Gin) :46221"]
+        akweb["akatsuki-web<br/>(React/TypeScript) :3000"]
         api["akatsuki-api<br/>(Go/FastHTTP) :40001"]
         admin["admin-panel<br/>(PHP) :8000"]
         score["score-service<br/>(Python/FastAPI) :7000"]
@@ -29,6 +31,20 @@ flowchart TB
         beatmaps["beatmaps-service<br/>(Python/FastAPI) :8080"]
         perf["performance-service<br/>(Rust/Axum) :8665"]
         users["users-service<br/>(Python/FastAPI) :8000"]
+        cheat["nachalo-konca<br/>(Python/FastAPI) :8088"]
+        assets["assets-service<br/>(Python/FastAPI) :8000"]
+        payments["payments-service<br/>(Python/FastAPI) :8000"]
+        history["profile-history-service<br/>(Python/FastAPI) :8000"]
+    end
+
+    subgraph Background["Background Jobs"]
+        cron["new-cron<br/>(Python/asyncio)"]
+        backup["sql-backup-job<br/>(Bash/Python)"]
+    end
+
+    subgraph Bots["Discord Bots"]
+        aibot["ai-discord-bot<br/>(Python/discord.py)"]
+        mgmtbot["management-discord-bot<br/>(Python/discord.py)"]
     end
 
     subgraph Data["Data Stores"]
@@ -36,6 +52,7 @@ flowchart TB
         redis[("Redis<br/>Cache & Pub/Sub")]
         s3[("S3<br/>Replays & Avatars")]
         amqp[("RabbitMQ<br/>Event Queue")]
+        postgres[("PostgreSQL<br/>AI Bot Data")]
     end
 
     subgraph ExternalAPIs["External APIs"]
@@ -44,18 +61,24 @@ flowchart TB
         mailgun["Mailgun"]
         discord["Discord Webhooks"]
         amplitude["Amplitude"]
+        paypal["PayPal IPN"]
+        openai["OpenAI/DeepSeek"]
     end
 
-    %% Client to Nginx
+    %% Client connections
     osu --> ng
     web --> ng
+    discordclient --> aibot
+    discordclient --> mgmtbot
 
     %% Nginx routing
     ng -->|"c.akatsuki.gg"| bancho
     ng -->|"akatsuki.gg"| hanayo
+    ng -->|"new.akatsuki.gg"| akweb
     ng -->|"akatsuki.gg/api/"| api
     ng -->|"old.akatsuki.gg"| admin
     ng -->|"osu.akatsuki.gg/web/"| score
+    ng -->|"a.akatsuki.gg"| assets
 
     %% Service-to-service HTTP
     bancho -->|"beatmap lookup"| beatmaps
@@ -66,9 +89,11 @@ flowchart TB
     hanayo -->|"user data"| api
     hanayo -->|"match history"| bancho
     hanayo -->|"beatmaps"| beatmaps
+    akweb -->|"all data"| api
     admin -->|"user mgmt"| users
     admin -->|"player data"| bancho
     perf -->|".osu files"| beatmaps
+    users -->|"avatars"| assets
 
     %% External APIs
     beatmaps --> osuapi
@@ -78,15 +103,24 @@ flowchart TB
     score --> discord
     score --> amplitude
     hanayo --> amplitude
+    payments --> paypal
+    aibot --> openai
+    mgmtbot --> discord
 
     %% Data store connections
     bancho & score & api & hanayo & admin --> mysql
     bancho & score & api & hanayo & admin --> redis
-    beatmaps & perf & users --> mysql
+    beatmaps & perf & users & cheat --> mysql
     perf & users --> redis
-    score & beatmaps & users --> s3
+    score & beatmaps & users & assets --> s3
+    payments & history & cron --> mysql
+    aibot --> postgres
+    backup -->|"dumps"| mysql
+    backup -->|"stores"| s3
 
     %% AMQP flows
+    score -->|"score events"| amqp
+    amqp -->|"score events"| cheat
     perf <-->|"rework queue"| amqp
 
     %% Redis Pub/Sub
@@ -100,29 +134,42 @@ flowchart TB
     classDef internal fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c
     classDef data fill:#fce4ec,stroke:#c2185b,color:#880e4f
     classDef external fill:#eceff1,stroke:#546e7a,color:#37474f
+    classDef background fill:#fff8e1,stroke:#f57f17,color:#f57f17
+    classDef bot fill:#e3f2fd,stroke:#1565c0,color:#1565c0
 
-    class osu,web client
+    class osu,web,discordclient client
     class ng nginx
-    class bancho,hanayo,api,admin,score public
-    class beatmaps,perf,users internal
-    class mysql,redis,s3,amqp data
-    class osuapi,mirrors,mailgun,discord,amplitude external
+    class bancho,hanayo,akweb,api,admin,score public
+    class beatmaps,perf,users,cheat,assets,payments,history internal
+    class mysql,redis,s3,amqp,postgres data
+    class osuapi,mirrors,mailgun,discord,amplitude,paypal,openai external
+    class cron,backup background
+    class aibot,mgmtbot bot
 ```
 
 ## Services
 
-| Service | Language | Purpose |
-|---------|----------|---------|
-| **nginx-conf** | nginx | Reverse proxy, routing, rate limiting |
-| **bancho-service-rs** | Rust/Axum | Real-time game server (osu! protocol) |
-| **score-service** | Python/FastAPI | Score submission & processing |
-| **beatmaps-service** | Python/FastAPI | Beatmap metadata & file distribution |
-| **performance-service** | Rust/Axum | PP calculation & rework management |
-| **users-service** | Python/FastAPI | User identity & authentication |
-| **akatsuki-api** | Go/FastHTTP | Public REST API |
-| **hanayo** | Go/Gin | Public website frontend |
-| **admin-panel** | PHP | Administrative interface |
-| **mysql-database** | SQL | Database schema & migrations |
+| Service                     | Language          | Purpose                                 |
+| --------------------------- | ----------------- | --------------------------------------- |
+| **nginx-conf**              | nginx             | Reverse proxy, routing, rate limiting   |
+| **bancho-service-rs**       | Rust/Axum         | Real-time game server (osu! protocol)   |
+| **score-service**           | Python/FastAPI    | Score submission & processing           |
+| **beatmaps-service**        | Python/FastAPI    | Beatmap metadata & file distribution    |
+| **performance-service**     | Rust/Axum         | PP calculation & rework management      |
+| **nachalo-konca**           | Python/FastAPI    | Replay cheat detection engine           |
+| **users-service**           | Python/FastAPI    | User identity & authentication          |
+| **akatsuki-api**            | Go/FastHTTP       | Public REST API                         |
+| **hanayo**                  | Go/Gin            | Public website frontend                 |
+| **akatsuki-web**            | React/TypeScript  | New SPA frontend (POC/experimental)     |
+| **admin-panel**             | PHP               | Administrative interface                |
+| **assets-service**          | Python/FastAPI    | Avatar & asset storage with moderation  |
+| **payments-service**        | Python/FastAPI    | PayPal IPN & donor privilege management |
+| **profile-history-service** | Python/FastAPI    | User stats history tracking             |
+| **ai-discord-bot**          | Python/discord.py | AI chat bot (GPT-4/DeepSeek)            |
+| **management-discord-bot**  | Python/discord.py | Scorewatch voting & player reporting    |
+| **new-cron**                | Python/asyncio    | Scheduled maintenance jobs              |
+| **sql-backup-job**          | Bash/Python       | MySQL backup to S3                      |
+| **mysql-database**          | SQL               | Database schema & migrations            |
 
 ## Communication Patterns
 
@@ -133,37 +180,38 @@ flowchart TB
 
 ### Inter-Service HTTP Calls
 
-| Caller | Target | Purpose |
-|--------|--------|---------|
-| bancho-service-rs | beatmaps-service | Beatmap metadata |
-| bancho-service-rs | performance-service | PP calculation |
-| score-service | beatmaps-service | Beatmap data |
-| score-service | performance-service | PP calculation |
-| score-service | bancho-service-rs | Match info, chat announcements |
-| hanayo | akatsuki-api | User data, leaderboards |
-| hanayo | bancho-service-rs | Match history |
-| hanayo | beatmaps-service | Beatmap pages |
-| admin-panel | users-service | User management |
-| admin-panel | bancho-service-rs | Player actions |
-| performance-service | beatmaps-service | .osu file download |
+| Caller              | Target              | Purpose                        |
+| ------------------- | ------------------- | ------------------------------ |
+| bancho-service-rs   | beatmaps-service    | Beatmap metadata               |
+| bancho-service-rs   | performance-service | PP calculation                 |
+| score-service       | beatmaps-service    | Beatmap data                   |
+| score-service       | performance-service | PP calculation                 |
+| score-service       | bancho-service-rs   | Match info, chat announcements |
+| hanayo              | akatsuki-api        | User data, leaderboards        |
+| hanayo              | bancho-service-rs   | Match history                  |
+| hanayo              | beatmaps-service    | Beatmap pages                  |
+| admin-panel         | users-service       | User management                |
+| admin-panel         | bancho-service-rs   | Player actions                 |
+| performance-service | beatmaps-service    | .osu file download             |
 
 ### Redis Pub/Sub Channels
 
-| Channel | Publishers | Subscribers | Purpose |
-|---------|------------|-------------|---------|
-| `peppy:ban` | users-service, admin-panel | bancho-service-rs | Disconnect banned users |
-| `peppy:unban` | admin-panel | bancho-service-rs | Allow reconnection |
-| `peppy:silence` | admin-panel | bancho-service-rs | Mute users in chat |
-| `peppy:disconnect` | admin-panel | bancho-service-rs | Force disconnect |
-| `peppy:notification` | various | bancho-service-rs | Send notifications |
-| `peppy:change_username` | users-service | bancho-service-rs | Update cached name |
-| `peppy:update_cached_stats` | score-service | bancho-service-rs | Refresh user stats |
+| Channel                     | Publishers                 | Subscribers       | Purpose                 |
+| --------------------------- | -------------------------- | ----------------- | ----------------------- |
+| `peppy:ban`                 | users-service, admin-panel | bancho-service-rs | Disconnect banned users |
+| `peppy:unban`               | admin-panel                | bancho-service-rs | Allow reconnection      |
+| `peppy:silence`             | admin-panel                | bancho-service-rs | Mute users in chat      |
+| `peppy:disconnect`          | admin-panel                | bancho-service-rs | Force disconnect        |
+| `peppy:notification`        | various                    | bancho-service-rs | Send notifications      |
+| `peppy:change_username`     | users-service              | bancho-service-rs | Update cached name      |
+| `peppy:update_cached_stats` | score-service              | bancho-service-rs | Refresh user stats      |
 
 ### AMQP Queues
 
-| Queue | Publisher | Consumer | Purpose |
-|-------|-----------|----------|---------|
-| `rework_queue` | performance-service API | performance-service processor | PP recalculation |
+| Queue              | Publisher               | Consumer                      | Purpose               |
+| ------------------ | ----------------------- | ----------------------------- | --------------------- |
+| `score_submission` | score-service           | nachalo-konca                 | Replay cheat analysis |
+| `rework_queue`     | performance-service API | performance-service processor | PP recalculation      |
 
 ## Key Architectural Patterns
 
@@ -172,19 +220,33 @@ flowchart TB
 Several services run as multiple components controlled by `APP_COMPONENT` environment variable:
 
 **bancho-service-rs:**
+
 - `api` - Main HTTP server handling osu! protocol
 - `cleanup-cron` - Background job to clean stale sessions/streams
 - `pubsub-daemon` - Listens to Redis `peppy:*` channels for events
 
+**nachalo-konca:**
+
+- `api` - REST API server for replay analysis
+- `amqp-processor` - Background consumer processing score events from RabbitMQ
+- `cli` - Interactive CLI for batch analysis of local replay files
+
 **performance-service:**
+
 - `api` - REST API server for PP calculation
 - `processor` - AMQP consumer for rework recalculation queue
 - `mass_recalc` - CLI for queuing mass recalculations
 - `individual_recalc` - CLI for single-user recalculation
 
+**profile-history-service:**
+
+- `api` - REST API server for historical data queries
+- `cron` - Background job for periodic stats snapshots
+
 ### Game Modes
 
 Standard osu! mode enum with relax/autopilot variants:
+
 - 0=std, 1=taiko, 2=ctb, 3=mania
 - 4=std_rx, 5=taiko_rx, 6=ctb_rx (relax)
 - 8=std_ap (autopilot)
@@ -206,6 +268,7 @@ Standard osu! mode enum with relax/autopilot variants:
 ### Beatmap Distribution
 
 beatmaps-service provides beatmap metadata and files via multi-mirror architecture:
+
 - Dynamic weighted round-robin across multiple mirrors (Mino, Nerinyan, osu!direct)
 - Weights based on P75 latency + failure rate over 4-hour window
 - Automatic failover with max 2 retries across mirrors
@@ -214,11 +277,13 @@ beatmaps-service provides beatmap metadata and files via multi-mirror architectu
 ### PP Calculation & Reworks
 
 performance-service supports multiple PP algorithm versions (reworks) for experimentation:
+
 - Users can queue themselves for recalculation against different rework versions
 - Separate leaderboards per rework
 - Background processor handles bulk recalculations via AMQP
 
 **PP Formula:**
+
 ```
 Total PP = SUM(score.pp * 0.95^index) + bonus_pp
 Bonus PP = 416.6667 * (1 - 0.995^score_count)
@@ -226,21 +291,23 @@ Bonus PP = 416.6667 * (1 - 0.995^score_count)
 
 ## Tech Stack
 
-| Category | Technologies |
-|----------|-------------|
-| **Languages** | Rust, Python, Go, PHP |
-| **Web Frameworks** | Axum, FastAPI, Gin, FastHTTP |
-| **Databases** | MySQL, Redis |
-| **Message Queue** | RabbitMQ (AMQP) |
-| **Storage** | S3-compatible object storage |
-| **Reverse Proxy** | nginx |
-| **External APIs** | osu! API v1/v2, Mailgun, Discord Webhooks, Amplitude |
+| Category           | Technologies                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| **Languages**      | Rust, Python, Go, TypeScript, PHP, Bash                                               |
+| **Web Frameworks** | Axum, FastAPI, Gin, FastHTTP, React                                                   |
+| **Databases**      | MySQL, Redis, PostgreSQL                                                              |
+| **Message Queue**  | RabbitMQ (AMQP)                                                                       |
+| **Storage**        | S3-compatible object storage                                                          |
+| **Reverse Proxy**  | nginx                                                                                 |
+| **Discord Bots**   | discord.py                                                                            |
+| **External APIs**  | osu! API v1/v2, Mailgun, Discord, Amplitude, PayPal, OpenAI/DeepSeek, AWS Rekognition |
 
 ## Code Style
 
-| Language | Standards |
-|----------|-----------|
-| **Python** | Python 3.11+, mypy strict, Black formatter, trailing commas |
-| **Rust** | cargo fmt, Clippy linting, async/await with Tokio |
-| **Go** | gofmt, middleware-based architecture |
-| **PHP** | PHP 7.4+, PSR-4 autoloading |
+| Language       | Standards                                                   |
+| -------------- | ----------------------------------------------------------- |
+| **Python**     | Python 3.11+, mypy strict, Black formatter, trailing commas |
+| **Rust**       | cargo fmt, Clippy linting, async/await with Tokio           |
+| **Go**         | gofmt, middleware-based architecture                        |
+| **TypeScript** | ESLint, Prettier, strict mode, React hooks                  |
+| **PHP**        | PHP 7.4+, PSR-4 autoloading                                 |
