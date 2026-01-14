@@ -166,6 +166,7 @@ flowchart TB
 | **new-cron**                | Python/asyncio    | Scheduled maintenance jobs              |
 | **sql-backup-job**          | Bash/Python       | MySQL backup to S3                      |
 | **mysql-database**          | SQL               | Database schema & migrations            |
+| **k8s-infra**               | Terraform/YAML    | Kubernetes cluster & infrastructure     |
 
 ## Communication Patterns
 
