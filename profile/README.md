@@ -296,14 +296,14 @@ Bonus PP = 416.6667 * (1 - 0.995^score_count)
 
 ### Cloud Architecture
 
-| Provider         | Purpose                                          |
-| ---------------- | ------------------------------------------------ |
-| **DigitalOcean** | Kubernetes worker nodes, nginx reverse proxy     |
-| **Cloudflare**   | DNS, CDN, DDoS protection, SSL certificates      |
-| **Docker Hub**   | Container registry (osuakatsuki organization)    |
-| **AWS S3**       | Object storage (replays, avatars, beatmaps)      |
-| **Datadog**      | APM, logs, metrics, monitoring                   |
-| **Vault**        | Secrets management                               |
+| Provider         | Purpose                                       |
+| ---------------- | --------------------------------------------- |
+| **DigitalOcean** | Kubernetes worker nodes, nginx reverse proxy  |
+| **Cloudflare**   | DNS, CDN, DDoS protection, SSL certificates   |
+| **Docker Hub**   | Container registry (osuakatsuki organization) |
+| **AWS S3**       | Object storage (replays, avatars, beatmaps)   |
+| **Datadog**      | APM, logs, metrics, monitoring                |
+| **Vault**        | Secrets management                            |
 
 ### Kubernetes
 
@@ -323,12 +323,14 @@ Cloudflare → public-rev-proxy → k8s-rev-proxy → K8s Services
 ```
 
 **Layer 1: public-rev-proxy**
+
 - Runs on mysql-master01 VM (outside K8s)
 - First ingress point from Cloudflare
 - Handles rate limiting at the edge
 - Routes to OVH services or K8s NodePort 30000
 
 **Layer 2: k8s-rev-proxy**
+
 - Runs as a pod inside K8s cluster
 - Entry point for traffic at NodePort 30000
 - Uses K8s service DNS for internal routing
