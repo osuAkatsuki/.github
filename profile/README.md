@@ -302,6 +302,56 @@ Bonus PP = 416.6667 * (1 - 0.995^score_count)
 | **Discord Bots**   | discord.py                                                                            |
 | **External APIs**  | osu! API v1/v2, Mailgun, Discord, Amplitude, PayPal, OpenAI/DeepSeek, AWS Rekognition |
 
+## Infrastructure
+
+### Cloud Architecture
+
+| Provider         | Purpose                                          |
+| ---------------- | ------------------------------------------------ |
+| **DigitalOcean** | Kubernetes worker nodes, nginx reverse proxy     |
+| **Cloudflare**   | DNS, CDN, DDoS protection, SSL certificates      |
+| **Docker Hub**   | Container registry (osuakatsuki organization)    |
+| **AWS S3**       | Object storage (replays, avatars, beatmaps)      |
+| **Datadog**      | APM, logs, metrics, monitoring                   |
+| **Vault**        | Secrets management                               |
+
+### Kubernetes
+
+- **Version**: Kubernetes v1.28 (self-managed via kubeadm)
+- **Container Runtime**: Docker with cri-dockerd
+- **Service Mesh**: Istio (optional)
+- **Workers**: 2 nodes in DigitalOcean VPC
+
+### Reverse Proxy Architecture (Two-Layer)
+
+Both nginx configurations run in production as a two-layer proxy:
+
+```
+Cloudflare → public-rev-proxy → k8s-rev-proxy → K8s Services
+                   │
+                   └──→ OVH services (direct)
+```
+
+**Layer 1: public-rev-proxy**
+- Runs on mysql-master01 VM (outside K8s)
+- First ingress point from Cloudflare
+- Handles rate limiting at the edge
+- Routes to OVH services or K8s NodePort 30000
+
+**Layer 2: k8s-rev-proxy**
+- Runs as a pod inside K8s cluster
+- Entry point for traffic at NodePort 30000
+- Uses K8s service DNS for internal routing
+
+### CI/CD Pipeline
+
+GitHub Actions → Docker Hub → Helm → Kubernetes
+
+1. Push to main/master triggers deployment
+2. Docker image built and pushed (tagged :latest and :sha)
+3. Helm upgrade using common-helm-charts base
+4. Atomic deployment with automatic rollback
+
 ## Code Style
 
 | Language       | Standards                                                   |
