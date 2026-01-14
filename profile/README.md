@@ -1,6 +1,6 @@
 # Akatsuki
 
-Akatsuki is a microservices-based [osu!](https://osu.ppy.sh) private server. This monorepo contains nineteen services that communicate via shared MySQL database, Redis pub/sub, and RabbitMQ message queues.
+Akatsuki is a microservices-based [osu!](https://osu.ppy.sh) private server. The services communicate via shared MySQL database, Redis pub/sub, and RabbitMQ message queues.
 
 **Website:** [akatsuki.gg](https://akatsuki.gg)
 
@@ -31,7 +31,6 @@ flowchart TB
         beatmaps["beatmaps-service<br/>(Python/FastAPI) :8080"]
         perf["performance-service<br/>(Rust/Axum) :8665"]
         users["users-service<br/>(Python/FastAPI) :8000"]
-        cheat["nachalo-konca<br/>(Python/FastAPI) :8088"]
         assets["assets-service<br/>(Python/FastAPI) :8000"]
         payments["payments-service<br/>(Python/FastAPI) :8000"]
         history["profile-history-service<br/>(Python/FastAPI) :8000"]
@@ -110,7 +109,7 @@ flowchart TB
     %% Data store connections
     bancho & score & api & hanayo & admin --> mysql
     bancho & score & api & hanayo & admin --> redis
-    beatmaps & perf & users & cheat --> mysql
+    beatmaps & perf & users --> mysql
     perf & users --> redis
     score & beatmaps & users & assets --> s3
     payments & history & cron --> mysql
@@ -119,8 +118,6 @@ flowchart TB
     backup -->|"stores"| s3
 
     %% AMQP flows
-    score -->|"score events"| amqp
-    amqp -->|"score events"| cheat
     perf <-->|"rework queue"| amqp
 
     %% Redis Pub/Sub
@@ -140,7 +137,7 @@ flowchart TB
     class osu,web,discordclient client
     class ng nginx
     class bancho,hanayo,akweb,api,admin,score public
-    class beatmaps,perf,users,cheat,assets,payments,history internal
+    class beatmaps,perf,users,assets,payments,history internal
     class mysql,redis,s3,amqp,postgres data
     class osuapi,mirrors,mailgun,discord,amplitude,paypal,openai external
     class cron,backup background
@@ -156,7 +153,6 @@ flowchart TB
 | **score-service**           | Python/FastAPI    | Score submission & processing           |
 | **beatmaps-service**        | Python/FastAPI    | Beatmap metadata & file distribution    |
 | **performance-service**     | Rust/Axum         | PP calculation & rework management      |
-| **nachalo-konca**           | Python/FastAPI    | Replay cheat detection engine           |
 | **users-service**           | Python/FastAPI    | User identity & authentication          |
 | **akatsuki-api**            | Go/FastHTTP       | Public REST API                         |
 | **hanayo**                  | Go/Gin            | Public website frontend                 |
@@ -208,10 +204,9 @@ flowchart TB
 
 ### AMQP Queues
 
-| Queue              | Publisher               | Consumer                      | Purpose               |
-| ------------------ | ----------------------- | ----------------------------- | --------------------- |
-| `score_submission` | score-service           | nachalo-konca                 | Replay cheat analysis |
-| `rework_queue`     | performance-service API | performance-service processor | PP recalculation      |
+| Queue          | Publisher               | Consumer                      | Purpose          |
+| -------------- | ----------------------- | ----------------------------- | ---------------- |
+| `rework_queue` | performance-service API | performance-service processor | PP recalculation |
 
 ## Key Architectural Patterns
 
@@ -224,12 +219,6 @@ Several services run as multiple components controlled by `APP_COMPONENT` enviro
 - `api` - Main HTTP server handling osu! protocol
 - `cleanup-cron` - Background job to clean stale sessions/streams
 - `pubsub-daemon` - Listens to Redis `peppy:*` channels for events
-
-**nachalo-konca:**
-
-- `api` - REST API server for replay analysis
-- `amqp-processor` - Background consumer processing score events from RabbitMQ
-- `cli` - Interactive CLI for batch analysis of local replay files
 
 **performance-service:**
 
