@@ -36,35 +36,50 @@
 
 ## Executive Summary
 
-The Akatsuki achievement system is **operational but critically incomplete**. While 916,252 achievement unlocks exist across 57,077 unique users, the system has four critical issues requiring immediate attention:
+**Last Updated:** January 19, 2026
 
-**Key Findings:**
+The Akatsuki achievement system has undergone major improvements through Sprints 1-4, addressing critical security and functionality issues. The system now has all 128 achievement definitions and secure code-based condition checking.
 
-1. **Missing medals**: Akatsuki lacks 32 medals that official osu! has (3 hit count tier 4, 16 rank milestones per-mode, 13 hush-hush secret medals)
-2. **Security vulnerability**: Achievement conditions execute code from database (security risk)
-3. **Zero achievements crisis**: 38,607 users (40%) have zero achievements despite having passed scores
-4. **Broken display**: API/frontend don't support mode-specific achievements (affects 49% of achievement holders)
+**Implementation Status (January 2026):**
 
-**Current Status:**
+- ✅ **Sprint 1 COMPLETE:** mode_str bug fixed, database migration deployed
+- ✅ **Sprint 2 COMPLETE:** Decorator-based architecture for 96 existing achievements (security issue eliminated)
+- ✅ **Sprint 3 COMPLETE:** 32 new achievement definitions added (128 total achievements)
+- ✅ **Sprint 4 COMPLETE:** API/frontend mode support (akatsuki-api + hanayo)
 
-- ✅ Achievements are mode-specific in score-service (correctly implemented)
-- ✅ System is active with recent unlocks (last: 2026-01-16 11:13:39)
-- ✅ 96 achievements defined across all game modes
-- 🔴 **CRITICAL:** 32 medals missing from official osu! → Need 128 total achievements
-- 🔴 **CRITICAL:** 38,607+ users have ZERO achievements despite having passed scores (40% coverage gap)
-- 🔴 **CRITICAL:** akatsuki-api and hanayo do NOT support mode-specific achievements (affects 49% of users)
-- 🔴 **CRITICAL:** Unsafe code execution via eval() blocks safe backfilling
-- 🐛 Critical bug: `mode_str` tuple missing index 8 (causes IndexError)
-- ⚠️ 41 duplicate achievement entries due to missing UNIQUE constraint
-- ⚠️ Missing database index on frequently-queried `mode` column
+**Remaining Work:**
 
-**Scope of Work:**
+- 🟡 **Sprint 5 PENDING:** Stat-based backfill (35 achievements, ~15-25K users)
+- 🟡 **Sprint 6 PENDING:** Mod/combo backfill (15 achievements, ~10-15K users)
+- 🟡 **Sprint 7 PENDING:** Star rating backfill (68 achievements, ~5-13K users)
 
-- Add 32 new medals → **128 total achievements** (up from 96)
-- ~40% reduction in zero-achievement users via backfilling
-- Fix API/frontend mode support (affects 27,948 users)
+**Key Findings (Initial Analysis - January 2026):**
 
-**Severity:** The achievement system is incomplete (missing 32 medals) and only serving ~60% of eligible users. See ACHIEVEMENT_BACKFILL_ANALYSIS.md for comprehensive backfill investigation.
+1. ~~**Missing medals**~~: ✅ FIXED - Added 32 medals, now 128 total achievements
+2. ~~**Security vulnerability**~~: ✅ FIXED - Replaced unsafe code execution with decorator-based architecture
+3. **Zero achievements crisis**: 38,607 users (40%) still have zero achievements - backfilling needed (Sprints 5-7)
+4. ~~**Broken display**~~: ✅ FIXED - API/frontend now support mode-specific achievements
+
+**Current Status (Post-Sprint 4):**
+
+- ✅ 128 achievements defined across all game modes (96 existing + 32 new)
+- ✅ Decorator-based architecture (safe, type-safe, version-controlled)
+- ✅ Mode-specific achievements working end-to-end (score-service → API → frontend)
+- ✅ Relax/autopilot mode support (modes 0-8 fully supported)
+- ✅ Production bugs fixed (SQL reserved keyword, race conditions)
+- ✅ Performance optimizations (mode filtering, loop merging)
+- ✅ Structured logging and observability
+- 🔴 **REMAINING:** 38,607+ users still have ZERO achievements (requires backfilling - Sprints 5-7)
+
+**Completed Work:**
+
+- ✅ Added 32 new medals → **128 total achievements** (up from 96)
+- ✅ Fixed API/frontend mode support (affected 27,948 users, 49% of achievement holders)
+- ✅ Eliminated security vulnerability (unsafe execution replaced with safe code)
+- ✅ Fixed critical production bugs (SQL syntax, race conditions)
+- ✅ Performance improvements (60% reduction in achievement checks per score)
+
+**Next Steps:** Begin Sprint 5 (stat-based backfill) to address the 40% zero-achievement coverage gap. See ACHIEVEMENT_BACKFILL_ANALYSIS.md for comprehensive backfill investigation and "Implementation Lessons Learned" section below for detailed lessons from Sprints 1-4.
 
 ## Current System Status
 
@@ -838,6 +853,159 @@ See ACHIEVEMENT_BACKFILL_ANALYSIS.md for detailed process.
 
 **Enhancement:**
 Add try/catch with logging for background job scheduling.
+
+## Implementation Lessons Learned (Sprints 1-4)
+
+**Status:** Sprints 1-4 completed and deployed to production (January 2026)
+
+This section documents issues discovered during implementation that were not identified in the initial analysis, along with their fixes.
+
+### Sprint 1: Database Migration + mode_str Fix
+
+**Status:** ✅ Completed - PR #137 (score-service)
+
+**Issues Discovered:**
+
+1. **SQL Reserved Keyword Collision (CRITICAL PRODUCTION BUG)**
+   - **Issue:** `desc` is a MySQL reserved keyword, causing syntax errors in production
+   - **Location:** `score-service/app/state/cache.py` - Achievement loading query
+   - **Error:** `asyncmy.errors.ProgrammingError: (1064, "You have an error in your SQL syntax... near 'desc FROM less_achievements'")`
+   - **Fix:** Escape with backticks: `SELECT id, file, name, \`desc\` FROM less_achievements`
+   - **Lesson:** Always escape potentially reserved keywords in SQL queries
+
+### Sprint 2: Decorator Architecture - Existing 96 Achievements
+
+**Status:** ✅ Completed - PR #138 (score-service)
+
+**Issues Discovered:**
+
+1. **Achievement Registry Design - Database Sync**
+   - **Issue:** Need to load achievement metadata (id, name, desc) from database even though conditions are in code
+   - **Reason:** Frontend displays achievement names/descriptions; can't duplicate in code
+   - **Solution:** Hybrid approach - conditions in code, metadata in database
+   - **Architecture:** Registry maps achievement files to condition functions; cache loads metadata from DB
+
+2. **Import Organization Best Practice**
+   - **Issue:** Need to explicitly import all achievement modules to trigger decorator registration
+   - **Location:** `app/achievements/__init__.py`
+   - **Solution:** Import all achievement modules at package level
+   - **Lesson:** Decorator-based registries require explicit imports
+
+### Sprint 3: Decorator Architecture - New 32 Achievements
+
+**Status:** ✅ Completed - PR #139 (score-service)
+
+**Issues Discovered:**
+
+1. **Beatmap Ranked Status Validation Gap**
+   - **Issue:** `twin_perspectives` achievement claims to check "ranked maps" but can't verify ranked status
+   - **Location:** `app/achievements/hush_hush.py:twin_perspectives()`
+   - **Root Cause:** `unlock_achievements()` receives only Score and Stats objects, not Beatmap object
+   - **Impact:** Achievement checks `beatmap.has_leaderboard` at call site, which includes LOVED/QUALIFIED (not just RANKED/APPROVED)
+   - **Current Fix:** Returns False with TODO comment explaining architectural limitation
+   - **Lesson:** Achievement condition functions need access to all relevant data
+
+2. **Achievement Organization - File Structure**
+   - **Issue:** Initially scattered achievements by type (pass/FC), but mode-specific achievements are more cohesive
+   - **Refactor:** Consolidated to by-mode organization (all std achievements in one place, etc.)
+   - **Benefit:** Easier to find and maintain mode-specific achievements
+   - **Lesson:** Organize by primary access pattern (mode) rather than secondary characteristics
+
+3. **Performance Optimization - Loop Merging**
+   - **Issue:** Two separate loops iterating `new_achievements` (logging loop + amplitude tracking loop)
+   - **Impact:** Unnecessary iteration overhead on score submission hot path
+   - **Fix:** Merged into single loop - PR #140
+   - **Lesson:** Look for loop merging opportunities in hot paths
+
+### Sprint 4: API + Frontend Mode Support
+
+**Status:** ✅ Completed - PRs #92-95 (akatsuki-api), PRs #238-242 (hanayo)
+
+**Issues Discovered:**
+
+1. **Relax/Autopilot Mode Support Complexity**
+   - **Issue:** Initial implementation only supported vanilla modes (0-3), missing relax (4-6) and autopilot (8)
+   - **Solution (akatsuki-api):**
+     - `fullMode` variable (0-8) for querying `users_achievements` table
+     - `vanillaMode` variable (0-3, calculated as `fullMode % 4`) for filtering `less_achievements` table
+     - Two-stage filtering: SQL query by fullMode, then in-memory filter by vanillaMode
+   - **Solution (hanayo):**
+     - `combinedMode` calculation: `favouriteMode + (preferRelax === 1 ? 4 : preferRelax === 2 ? 8 : 0)`
+     - Reload achievements on both mode switcher AND rx/ap switcher
+   - **Lesson:** Consider all mode variants when designing mode-aware features
+
+2. **Frontend State Management - Multiple Reload Triggers**
+   - **Issue:** Achievements need to reload on two different events: mode switch AND rx switch
+   - **Solution:** Called `initialiseAchievements()` in both handlers
+   - **Lesson:** Identify all state change triggers that affect displayed data
+
+3. **UI State Bugs - Load More Button**
+   - **Issue:** Using `.remove()` on "Load more" button caused it to disappear permanently when switching modes
+   - **Fix:** Changed to `.hide()` and `.show()` - PR #241
+   - **Lesson:** Prefer show/hide over add/remove for elements that may be toggled multiple times
+
+4. **UI State Bugs - Locked Achievement Display**
+   - **Issue:** `displayAchievements(8, true)` only showed achieved medals, hiding locked medals on mode switch
+   - **Fix:** Changed to `displayAchievements(8, false)` - PR #240
+   - **Lesson:** When reloading UI state, match the initial load behavior
+
+5. **Race Condition - Empty State Duplication**
+   - **Issue:** Calling `initialiseAchievements()` multiple times without clearing container caused duplicate empty state messages
+   - **Fix:** Added `.empty()` before `.append()` on empty state path
+   - **Lesson:** Functions designed for one-time initialization need cleanup logic when called repeatedly
+
+6. **Race Condition - Click Handler Accumulation**
+   - **Issue:** Multiple calls to `initialiseAchievements()` bound multiple click handlers to "Load more" button
+   - **Fix:** Added `.off("click")` before `.on("click", ...)`
+   - **Lesson:** Always clean up event handlers before rebinding
+
+7. **Variable Naming Clarity**
+   - **Issue:** Generic variable name `m` for mode value was unclear
+   - **Fix:** Renamed to `fullMode` - PR #95
+   - **Lesson:** Use descriptive variable names for complex concepts
+
+### Additional Improvements Discovered
+
+1. **Achievement Unlock Race Condition**
+   - **Issue:** Two concurrent score submissions might try to unlock same achievement simultaneously
+   - **Error:** `IntegrityError` on INSERT when UNIQUE constraint added
+   - **Fix:** Changed to `INSERT IGNORE` - PR #143
+   - **Benefit:** Idempotent operation, no error handling needed
+   - **Lesson:** Use INSERT IGNORE for idempotent operations in concurrent systems
+
+2. **Mode Filtering Performance Optimization**
+   - **Issue:** Checking all 128 achievements per score submission
+   - **Optimization:** Filter achievements by mode before checking unlock status - PR #143
+   - **Benefit:** Reduces iterations from 128 to ~50 achievements per score (~60% reduction)
+   - **Lesson:** Filter early in pipeline to reduce unnecessary processing
+
+3. **Logging and Observability**
+   - **Issue:** No logging when achievements are unlocked (makes debugging difficult)
+   - **Fix:** Added structured logging with achievement details - PR #139
+   - **Lesson:** Add logging for significant state changes
+
+4. **Type Safety - Mypy Strict Mode**
+   - **Issue:** Various type errors discovered during development
+   - **Fix:** PR #141 - Fixed all mypy errors
+   - **Lesson:** Enable mypy early and fix type errors as they arise
+
+### Key Takeaways for Future Sprints
+
+**Best Practices Established:**
+
+1. **SQL Safety:** Always escape reserved keywords
+2. **Concurrency:** Use idempotent operations (INSERT IGNORE, UPSERT)
+3. **Performance:** Filter by mode/criteria early; merge loops in hot paths
+4. **UI State:** Use show/hide over add/remove; clean up handlers before rebinding
+5. **Observability:** Add structured logging for state changes
+6. **Type Safety:** Keep mypy passing
+7. **Naming:** Use descriptive names for complex concepts
+8. **Architecture:** Organize by primary access pattern
+
+**Issues Still Deferred:**
+
+1. **Beatmap ranked status in achievements:** Need architectural change to pass Beatmap object
+2. **Achievement backfilling:** Ready to begin Sprint 5
 
 ## Testing Plan
 
