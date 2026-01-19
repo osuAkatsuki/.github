@@ -1,6 +1,6 @@
 # Akatsuki Achievement System - Analysis & Action Plan
 
-**Date:** 2026-01-16
+**Dates:** January 2026
 **Investigator:** Claude Code
 **Database:** Production MySQL (mysql-master01)
 
@@ -21,9 +21,16 @@
 **Sprint Workflow:**
 
 - Implementation will be broken into sprints, each with specific deliverables
-- At the end of each sprint, PRs will be created for review
+- At the end of each sprint, PRs will be created using `gh pr create -R osuAkatsuki/<repo>` for review
 - Implementation will pause and wait for feedback before proceeding to the next sprint
 - Each sprint should be independently testable and deployable
+
+**Git Repository Guidelines:**
+
+- **❌ NEVER:** Create PRs to `RealistikOsu/USSR` (upstream fork source)
+- **✅ ALWAYS:** Create PRs to `osuAkatsuki/score-service` (our repository)
+- **✅ DO:** Use `gh pr create -R osuAkatsuki/<repo>` to ensure correct target repository
+- Verify git remote configuration before creating PRs
 
 ---
 
@@ -66,12 +73,15 @@ The Akatsuki achievement system is **operational but critically incomplete**. Wh
 **Achievement Definitions:**
 
 ```
-Total: 96 achievements in less_achievements table
-  - osu!std:  28 achievements
-  - taiko:    19 achievements
-  - catch:    19 achievements
-  - mania:    19 achievements
-  - all:      11 achievements (mode-agnostic, mod-based)
+Total: 128 achievements in less_achievements table (as of 2026-01-19)
+  - osu!std:  36 achievements (10 pass, 10 FC, 4 combo, 4 plays, 4 rank, 4 hits)
+  - taiko:    27 achievements (8 pass, 8 FC, 3 hits, 4 rank, 4 hits)
+  - catch:    27 achievements (8 pass, 8 FC, 3 hits, 4 rank, 4 hits)
+  - mania:    27 achievements (8 pass, 8 FC, 3 hits, 4 rank, 4 hits)
+  - all:      24 achievements (11 mod intro, 13 hush-hush secrets)
+
+Coverage: 128/339 (38%) of official osu! medals
+Missing: 211 medals (82 packs, 22 spotlights, 115 advanced secrets)
 ```
 
 **Unlocks by Mode:**
